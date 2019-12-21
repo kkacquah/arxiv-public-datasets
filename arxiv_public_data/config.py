@@ -13,6 +13,8 @@ DEFAULT_PATH = os.path.join(os.path.abspath('./'), 'arxiv-data')
 JSONFILE = './config.json'
 KEY = 'ARXIV_DATA'
 
+AWS_S3_BUCKET_NAME = 'arxiv-explorer-datalake-test'
+
 def get_outdir():
     """
     Grab the outdir from:

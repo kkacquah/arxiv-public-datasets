@@ -32,11 +32,15 @@ import time
 import hashlib
 import datetime
 import requests
+import boto3
 import xml.etree.ElementTree as ET
 
-from arxiv_public_data.config import LOGGER, DIR_BASE
+from arxiv_public_data.config import LOGGER, DIR_BASE, AWS_S3_BUCKET_NAME
 
 log = LOGGER.getChild('metadata')
+
+# Query header for only CS ML papers
+QUERY = 'cat:cs.CV+OR+cat:cs.AI+OR+cat:cs.LG+OR+cat:cs.CL+OR+cat:cs.NE+OR+cat:stat.ML'
 
 URL_ARXIV_OAI = 'https://export.arxiv.org/oai2'
 URL_CITESEER_OAI = 'http://citeseerx.ist.psu.edu/oai2'
@@ -45,15 +49,20 @@ OAI_XML_NAMESPACES = {
     'arXiv': 'http://arxiv.org/OAI/arXivRaw/'
 }
 
+
 def get_list_record_chunk(resumptionToken=None, harvest_url=URL_ARXIV_OAI,
-                          metadataPrefix='arXivRaw'):
+                          metadataPrefix='arXivRaw', archiveSet=None):
     """
     Query OIA API for the metadata of 1000 Arxiv article
+    See https://arxiv.org/help/oa for URL structure info
 
     Parameters
     ----------
         resumptionToken : str
             Token for the API which triggers the next 1000 articles
+
+        archiveSet : str
+            Set name of a selective ArXiv set (ex. cs, physics, math)
 
     Returns
     -------
@@ -66,6 +75,8 @@ def get_list_record_chunk(resumptionToken=None, harvest_url=URL_ARXIV_OAI,
         parameters['resumptionToken'] = resumptionToken
     else:
         parameters['metadataPrefix'] = metadataPrefix
+        # http://www.openarchives.org/OAI/openarchivesprotocol.html#SelectiveHarvestingandSets
+        if archiveSet: parameters['set'] = archiveSet
 
     response = requests.get(harvest_url, params=parameters)
 
@@ -192,6 +203,8 @@ def all_of_arxiv(outfile=None, resumptionToken=None, autoresume=True):
             If true, it looks for a saved resumptionToken in the file
             <outfile>-resumptionToken.txt
     """
+    s3Client = boto3.client('s3')
+
     date = str(datetime.datetime.now()).split(' ')[0]
 
     outfile = (
@@ -206,6 +219,7 @@ def all_of_arxiv(outfile=None, resumptionToken=None, autoresume=True):
     if directory and not os.path.exists(directory):
         os.makedirs(directory)
     tokenfile = '{}-resumptionToken.txt'.format(outfile)
+    manifestfile = os.path.join(directory, 'arxiv-article-manifest.txt')
     chunk_index = 0
     total_records = 0
 
@@ -223,16 +237,37 @@ def all_of_arxiv(outfile=None, resumptionToken=None, autoresume=True):
         log.info('Index {:4d} | Records {:7d} | resumptionToken "{}"'.format(
             chunk_index, total_records, resumptionToken)
         )
-        xml_root = ET.fromstring(get_list_record_chunk(resumptionToken))
+
+        # Fetch XML result using query and ArXiv Metadata format
+        xml_root = ET.fromstring(get_list_record_chunk(resumptionToken, archiveSet="cs"))
         check_xml_errors(xml_root)
         records, resumptionToken = parse_xml_listrecords(xml_root)
 
         chunk_index = chunk_index + 1
         total_records = total_records + len(records)
 
-        with gzip.open(outfile, 'at', encoding='utf-8') as fout:
+        # Add filenames to manifest file
+        with open(manifestfile, 'at') as fout:
             for rec in records:
-                fout.write(json.dumps(rec) + '\n')
+                fout.write(rec['id'] + '\n')
+
+        # Overwrites files with the same name
+        with gzip.open(outfile, 'wt', encoding='utf-8') as fout:
+            for rec in records:
+                fout.write(json.dumps(rec) + '\n')    
+
+        # Upload to S3
+        objectName = os.path.split(outfile)[1].split('.')[0] + '-' + f'{chunk_index:04}' + '.json.gz'
+        with open(outfile, 'rb') as fout:
+            s3Client.upload_fileobj(fout, AWS_S3_BUCKET_NAME, objectName)    
+
+        # Remove downloaded data
+        if os.path.exists(outfile):
+            os.remove(outfile)
+        
+        # Re-upload manifest file to S3 
+        s3Client.upload_file(manifestfile, AWS_S3_BUCKET_NAME, os.path.split(manifestfile)[1])
+
         if resumptionToken:
             with open(tokenfile, 'w') as fout:
                 fout.write(resumptionToken)
