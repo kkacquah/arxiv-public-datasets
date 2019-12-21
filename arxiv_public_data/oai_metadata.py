@@ -98,12 +98,10 @@ def parse_record(elm):
     """
     Parse the XML element of a single ArXiv article into a dictionary of
     attributes
-
     Parameters
     ----------
         elm : xml.etree.ElementTree.Element
             Element of the record of a single ArXiv article
-
     Returns
     -------
         output : dict
@@ -119,10 +117,10 @@ def parse_record(elm):
     output['categories'] = [
         i.text for i in (_record_element_all(elm, 'categories') or [])
     ]
-    output['versions'] = [
-        i.attrib['version'] for i in _record_element_all(elm, 'version')
-    ]
+    last_version = _record_element_all(elm, 'version')[-1]
+    output["timestamp"] = _record_element_text(timestamp, "date")
     return output
+
 
 def parse_xml_listrecords(root):
     """
@@ -196,7 +194,7 @@ def all_of_arxiv(outfile=None, resumptionToken=None, autoresume=True):
 
     outfile = (
         outfile or # user-supplied
-        find_default_locations() or # already in progress 
+        find_default_locations() or # already in progress
         os.path.join(
             DIR_BASE, 'arxiv-metadata-oai-{}.json.gz'.format(date)
         ) # new file
