@@ -263,14 +263,15 @@ def all_of_arxiv(outfile=None, resumptionToken=None, autoresume=True):
         if os.path.exists(outfile):
             os.remove(outfile)
         
-        # Re-upload manifest file to S3 
-        s3Client.upload_file(manifestfile, AWS_S3_BUCKET_NAME, os.path.split(manifestfile)[1])
-
         if resumptionToken:
             with open(tokenfile, 'w') as fout:
                 fout.write(resumptionToken)
         else:
             log.info('No resumption token, query finished')
+
+            # Upload manifest file
+            s3Client.upload_file(manifestfile, AWS_S3_BUCKET_NAME, os.path.split(manifestfile)[1])
+
             return
 
         time.sleep(12)  # OAI server usually requires a 10s wait
