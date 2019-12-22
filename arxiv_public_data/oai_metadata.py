@@ -129,7 +129,7 @@ def parse_record(elm):
         i.text for i in (_record_element_all(elm, 'categories') or [])
     ]
     last_version = _record_element_all(elm, 'version')[-1]
-    output["timestamp"] = _record_element_text(timestamp, "date")
+    output["timestamp"] = _record_element_text(last_version, "date")
     return output
 
 
@@ -274,7 +274,7 @@ def all_of_arxiv(outfile=None, resumptionToken=None, autoresume=True):
 
             return
 
-        time.sleep(12)  # OAI server usually requires a 10s wait
+        time.sleep(5)  # OAI server usually requires a 10s wait
 
 def load_metadata(infile=None):
     """
